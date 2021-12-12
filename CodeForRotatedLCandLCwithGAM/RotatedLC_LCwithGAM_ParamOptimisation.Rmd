@@ -1,0 +1,364 @@
+---
+title: "Rotated LC Optimization"
+output: html_document
+---
+
+# 1. Preparing Data
+
+Sourcing external custom functions:
+
+```{r}
+# In case we need the parent directorcy
+#parts <- unlist(strsplit(getwd(), .Platform$file.sep))
+#ParentDirectory <- do.call(file.path, as.list(parts[1:length(parts) - 1]))
+
+source("RotatedLC_Functions.R")
+```
+
+Loading and preparing HMD data:
+
+
+```{r}
+
+country <- "ISL"
+
+DataOutput <- CleanUp_HMD(country, 1950, 1990, 1999)
+```
+Check the output m_x tables
+
+```{r}
+
+nrow(DataOutput$mx_male_train)
+nrow(DataOutput$mx_male_validation)
+nrow(DataOutput$mx_male_test)
+colnames(DataOutput$mx_male_train)
+colnames(DataOutput$mx_male_validation)
+colnames(DataOutput$mx_male_test)
+
+nrow(DataOutput$mx_female_train)
+nrow(DataOutput$mx_female_validation)
+nrow(DataOutput$mx_female_test)
+colnames(DataOutput$mx_female_train)
+colnames(DataOutput$mx_female_validation)
+colnames(DataOutput$mx_female_test)
+
+```
+
+# 2. Rotated Lee-Carter
+
+Checking the $e_0$ projectons of the plain L-C model:
+
+```{r}
+testresults <- ForecastRotatedLC(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                e0_female_proj = NULL, e0_male_proj = NULL,
+                                0.5, 87, ncol(DataOutput$mx_male_validation)+ncol(DataOutput$mx_male_test), IsLog = TRUE)
+
+testresults$est_e0_male
+testresults$est_e0_female
+
+(testresults$est_e0_male+testresults$est_e0_female)/2
+
+testresults$arima_male_coef
+testresults$arima_female_coef
+```
+
+
+Executing optimisation of $p$ on HMD.
+**!!!IMPORTANT!!!** Parameters e0_female_proj and e0_male_proj must be **NULL**!!
+
+```{r}
+OptimisationResults <- OptimizeRotatedLC(mx_male_train = DataOutput$mx_male_train,
+                                         mx_female_train = DataOutput$mx_female_train,
+                                         mx_male_validation = DataOutput$mx_male_validation,
+                                         mx_female_validation = DataOutput$mx_female_validation,
+                                         mx_male_test = DataOutput$mx_male_test,
+                                         mx_female_test = DataOutput$mx_female_test,
+                                         nx = 1,
+                                         e0_female_proj = NULL,
+                                         e0_male_proj = NULL,
+                                         is_log = TRUE)
+
+
+OptimisationResults$optimal_e0l_male
+OptimisationResults$optimal_p_male
+
+OptimisationResults$optimal_e0l_female
+OptimisationResults$optimal_p_female
+```
+
+Plotting the RMSE values along $p$ and $e_0$ for both sexes:
+
+```{r}
+mse_results <- OptimisationResults$mse_table
+
+library(ggplot2)
+
+ggplot(mse_results, aes(e0l, p, fill= mse_female_validation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of p and e0l on Validation Set - Females")
+
+ggplot(mse_results, aes(e0l, p, fill= mse_male_validation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of p and e0l on Validation Set - Males")
+
+
+ggplot(mse_results, aes(e0l, p, fill= mse_female_test)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of p and e0l on Test Set - Females")
+
+ggplot(mse_results, aes(e0l, p, fill= mse_male_test)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of p and e0l on Test Set - Males")
+
+
+
+```
+
+
+
+Finding optimal $p$ for all countries based on HMD Data:
+
+```{r}
+CountryList <- c("AUS", "AUT", "BLR", "BEL", "BGR", "CAN", "CZE", "DNK", "EST", "FIN", "FRATNP", "DEUTE", "DEUTW", "GRC", "HKG", "HUN", "ISL", "IRL", "ISR", "ITA", "JPN", "LVA", "LTU", "LUX", "NLD", "NZL_NP", "NOR", "POL", "PRT", "RUS", "SVK", "SVN", "ESP", "SWE", "CHE", "TWN", "GBR_NP", "GBRTENW", "GBR_SCO", "GBR_NIR", "USA", "UKR")
+
+ResultList <- vector(mode = "list", length = length(CountryList))
+names(ResultList) <- CountryList
+
+for (index in 1:length(CountryList)) {
+  DataOutput <- CleanUp_HMD(CountryList[index], 1950, 1990, 1999)
+  
+  print(CountryList[index])
+  
+  tryCatch(
+    expr = {
+      OptimisationResults <- OptimizeRotatedLC(mx_male_train = DataOutput$mx_male_train,
+                                         mx_female_train = DataOutput$mx_female_train,
+                                         mx_male_validation = DataOutput$mx_male_validation,
+                                         mx_female_validation = DataOutput$mx_female_validation,
+                                         mx_male_test = DataOutput$mx_male_test,
+                                         mx_female_test = DataOutput$mx_female_test,
+                                         nx = 1,
+                                         e0_female_proj = NULL,
+                                         e0_male_proj = NULL,
+                                         is_log = TRUE)
+      ResultList[[index]] <- OptimisationResults
+    },
+    error = function(error_condition){ 
+        ResultList[[index]] <- error_condition
+    }
+  )
+}
+```
+
+
+Save results to RDA:
+
+```{r}
+save(ResultList,file="HMD_RotatedLC_Optimised_p_e0l_LogMSE.Rda")
+```
+
+
+Plotting the RMSE values along $p$ and $e_0$ for both sexes:
+
+```{r}
+OptimisationResults <- ResultList$SWE
+
+mse_results <- OptimisationResults$mse_table
+
+library(ggplot2)
+
+ggplot(mse_results, aes(e0l, p, fill= mse_female_validation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of p and e0l on Validation Set - Females")
+
+ggplot(mse_results, aes(e0l, p, fill= mse_male_validation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of p and e0l on Validation Set - Males")
+
+
+ggplot(mse_results, aes(e0l, p, fill= mse_female_test)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of p and e0l on Test Set - Females")
+
+ggplot(mse_results, aes(e0l, p, fill= mse_male_test)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of p and e0l on Test Set - Males")
+
+```
+
+# 3. Lee-Carter with GAM
+
+Testing the function for LC+GAM $m_x$ forecasts with fixed parameters
+
+```{r}
+testresults <- ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                 k_base = 7, basis_form = "ts",
+                                 ForecastPeriods = ncol(DataOutput$mx_male_validation)+ncol(DataOutput$mx_male_test),
+                                 IsLog = TRUE)
+
+testresults$arima_male_coef
+testresults$arima_female_coef
+
+plotmo::plotmo(testresults$GAM_male)
+plotmo::plotmo(testresults$GAM_female)
+```
+
+Executing optimisation of $k$ and $bs$ on HMD.
+
+```{r}
+OptimisationResults <- OptimizeLCwithGAM(mx_male_train = DataOutput$mx_male_train,
+                                         mx_female_train = DataOutput$mx_female_train,
+                                         mx_male_validation = DataOutput$mx_male_validation,
+                                         mx_female_validation = DataOutput$mx_female_validation,
+                                         mx_male_test = DataOutput$mx_male_test,
+                                         mx_female_test = DataOutput$mx_female_test,
+                                         nx = 1,
+                                         is_log = TRUE)
+```
+
+Plotting the RMSE values along $k$ and $bs$ for both sexes:
+
+```{r}
+mse_results <- OptimisationResults$mse_table
+
+library(ggplot2)
+
+ggplot(mse_results, aes(x=basis_form,y=k_base, fill= mse_female_validation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of k and bs on Validation Set - Females")
+
+ggplot(mse_results, aes(basis_form, k_base, fill= mse_male_validation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of k and bs on Validation Set - Males")
+
+
+ggplot(mse_results, aes(basis_form, k_base, fill= mse_female_test)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of k and bs on Test Set - Females")
+
+ggplot(mse_results, aes(basis_form, k_base, fill= mse_male_test)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of k and bs on Test Set - Males")
+
+
+
+```
+
+Finding optimal $k$ and $bs$ for all countries based on HMD Data:
+
+```{r}
+#CountryList <- c("AUS", "AUT", "BLR", "BEL", "BGR", "CAN", "CZE", "DNK", "EST", "FIN", "FRATNP", "DEUTE", "DEUTW", "GRC", #"HKG", "HUN", "ISL", "IRL", "ISR", "ITA", "JPN", "LVA", "LTU", "LUX", "NLD", "NZL_NP", "NOR", "POL", "PRT", "RUS", "SVK", #"SVN", "ESP", "SWE", "CHE", "TWN", "GBR_NP", "GBRTENW", "GBR_SCO", "GBR_NIR", "USA", "UKR")
+
+CountryList <- c("BLR", "EST", "DEUTE", "DEUTW", "GRC", "HKG", "ISL", "TWN", "GBRTENW")
+
+ResultList <- vector(mode = "list", length = length(CountryList))
+names(ResultList) <- CountryList
+
+for (index in 1:length(CountryList)) {
+  DataOutput <- CleanUp_HMD(CountryList[index], 1950, 1990, 1999)
+  
+  print(CountryList[index])
+  
+  tryCatch(
+    expr = {
+      OptimisationResults <- OptimizeLCwithGAM(mx_male_train = DataOutput$mx_male_train,
+                                         mx_female_train = DataOutput$mx_female_train,
+                                         mx_male_validation = DataOutput$mx_male_validation,
+                                         mx_female_validation = DataOutput$mx_female_validation,
+                                         mx_male_test = DataOutput$mx_male_test,
+                                         mx_female_test = DataOutput$mx_female_test,
+                                         nx = 1,
+                                         is_log = TRUE)
+      ResultList[[index]] <- OptimisationResults
+    },
+    error = function(error_condition){ 
+        ResultList[[index]] <- error_condition
+    }
+  )
+}
+
+save(ResultList,file="HMD_LCwithGAM_Optimised_k_bs_LogMSE.Rda")
+```
+
+Load the exported result list from `Rda` file:
+```{r}
+load("HMD_LCwithGAM_Optimised_k_bs_LogMSE.Rda")
+```
+
+
+Plotting the RMSE values along $k$ and $bs$ for both sexes:
+
+```{r}
+OptimisationResults <- ResultList$GRC
+
+mse_results <- OptimisationResults$mse_table
+
+library(ggplot2)
+
+ggplot(mse_results, aes(x=basis_form,y=k_base, fill= mse_female_validation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of k and bs on Validation Set - Females")
+
+ggplot(mse_results, aes(basis_form, k_base, fill= mse_male_validation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of k and bs on Validation Set - Males")
+
+
+ggplot(mse_results, aes(basis_form, k_base, fill= mse_female_test)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of k and bs on Test Set - Females")
+
+ggplot(mse_results, aes(basis_form, k_base, fill= mse_male_test)) + 
+  geom_tile() +
+  scale_fill_gradient(low="green", high="red") +
+  labs(title = "MSE as a function of k and bs on Test Set - Males")
+
+```
+
+Load the the best results per country from `Rda` file:
+```{r}
+load("HMD_BestResultsByCountry_Rotated+GAM.Rda")
+```
+
+Plot the differences in Male+Female MSE on test set for each Country:
+
+```{r}
+library(ggplot2)
+
+HMD_BestResultsByCountry_ToPlotMale <- HMD_BestResultsByCountry[,c("Country", "mse_male_test_RotatedLC", "mse_male_test_LCwithGAM")]
+HMD_BestResultsByCountry_ToPlotMale$mse_male_test_Difference <- HMD_BestResultsByCountry_ToPlotMale$mse_male_test_LCwithGAM -
+  HMD_BestResultsByCountry_ToPlotMale$mse_male_test_RotatedLC
+HMD_BestResultsByCountry_ToPlotMale$WhichIsBetter <- ifelse(HMD_BestResultsByCountry_ToPlotMale$mse_male_test_Difference > 0,
+                                                            "RotatedLC", "LCwithGAM")
+
+ggplot(HMD_BestResultsByCountry_ToPlotMale, aes(x=reorder(Country,mse_male_test_Difference), y=mse_male_test_Difference, fill=WhichIsBetter)) +
+  geom_bar(stat='identity', position='dodge') +
+  labs(title = "Difference in MSE of RotatedLC and LC with GAM on Test Set - Males",
+       x=NULL) + coord_flip()
+
+HMD_BestResultsByCountry_ToPlotFemale <- HMD_BestResultsByCountry[,c("Country", "mse_female_test_RotatedLC", "mse_female_test_LCwithGAM")]
+HMD_BestResultsByCountry_ToPlotFemale$mse_female_test_Difference <- HMD_BestResultsByCountry_ToPlotFemale$mse_female_test_LCwithGAM -
+  HMD_BestResultsByCountry_ToPlotFemale$mse_female_test_RotatedLC
+HMD_BestResultsByCountry_ToPlotFemale$WhichIsBetter <- ifelse(HMD_BestResultsByCountry_ToPlotFemale$mse_female_test_Difference > 0,"RotatedLC", "LCwithGAM")
+
+ggplot(HMD_BestResultsByCountry_ToPlotFemale, aes(x=reorder(Country,mse_female_test_Difference), y=mse_female_test_Difference, fill=WhichIsBetter)) +
+  geom_bar(stat='identity', position='dodge') +
+  labs(title = "Difference in MSE of RotatedLC and LC with GAM on Test Set - Females",
+       x=NULL) + coord_flip()
+
+```
