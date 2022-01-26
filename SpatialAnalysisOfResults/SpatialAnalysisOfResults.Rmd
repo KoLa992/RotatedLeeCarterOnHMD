@@ -321,7 +321,7 @@ mypalette <- colorNumeric(palette = "RdYlGn",
 # Prepare the text for tooltips
 mytext <- paste(
     "Country: ", world_spdf@data$NAME,"<br/>", 
-    "Best Model Female: ", world_spdf@data$BestMaleModel, "<br/>", 
+    "Best Model Male: ", world_spdf@data$BestMaleModel, "<br/>", 
     "NN_boost_vs_Best_notNN_male: ", round(world_spdf@data$NN_boost_vs_Best_notNN_male, 3), 
     sep="") %>%
   lapply(htmltools::HTML)
