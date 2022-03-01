@@ -1,0 +1,431 @@
+---
+title: "Export Mortality Rates"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+  html_notebook: 
+    highlight: tango
+    theme: spacelab
+    toc: yes
+    toc_float: yes
+    toc_depth: 5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Read Data on Model Results for all Country
+
+Loading the *csv* to R enivronment:
+
+
+```{r}
+library(readr)
+HMD_BestResults <- read_csv("HMD_BestResultsByCountry_Rotated+GAM+NN.csv")
+HMD_BestResults <- as.data.frame(HMD_BestResults)
+str(HMD_BestResults)
+```
+
+Remove columns of valdiation results:
+
+```{r}
+HMD_BestResults$min_mse_female_validation_RotatedLC <- NULL
+HMD_BestResults$min_mse_male_validation_RotatedLC <- NULL
+HMD_BestResults$min_mse_female_validation_LCwithGAM <- NULL
+HMD_BestResults$min_mse_male_validation_LCwithGAM <- NULL
+str(HMD_BestResults)
+```
+Load packages for analysis:
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+```
+
+## 2. Get the best RotatedLC parameters for each country.
+
+Load the detailed *RotatedLC* results:
+
+```{r}
+load("HMD_RotatedLC_Full_LogMSE.Rda")
+str(HMD_RotatedLC_Full)
+```
+
+Adjust column names to be compatible with HMD_BestResults:
+
+```{r}
+colnames(HMD_RotatedLC_Full)[5:6] <- colnames(HMD_BestResults[2:3])
+str(HMD_RotatedLC_Full)
+```
+
+Let's get the $e0l$ and $p$ parameters based on the test $MSE$ in the `HMD_BestResults` dataframe:
+
+```{r}
+# Males
+HMD_Best_withRotatedLC_Male <- HMD_BestResults[,c("Country", "mse_male_test_RotatedLC")]
+HMD_Best_withRotatedLC_Male <- merge(HMD_Best_withRotatedLC_Male,
+                                     HMD_RotatedLC_Full[,c("Country",
+                                                           "mse_male_test_RotatedLC",
+                                                           "e0l",
+                                                           "p")],
+                                     by=c("Country", "mse_male_test_RotatedLC"))
+
+
+
+# Aggregate multiple optima
+HMD_Best_withRotatedLC_Male <- HMD_Best_withRotatedLC_Male %>% group_by(Country) %>% summarise_all(min)
+
+#----------------------------------------------------------------------------------------------------
+
+# Females
+HMD_Best_withRotatedLC_Female <- HMD_BestResults[,c("Country", "mse_female_test_RotatedLC")]
+HMD_Best_withRotatedLC_Female <- merge(HMD_Best_withRotatedLC_Female,
+                                     HMD_RotatedLC_Full[,c("Country",
+                                                           "mse_female_test_RotatedLC",
+                                                           "e0l",
+                                                           "p")],
+                                     by=c("Country", "mse_female_test_RotatedLC"))
+
+# Aggregate multiple optima
+HMD_Best_withRotatedLC_Female <- HMD_Best_withRotatedLC_Female %>% group_by(Country) %>% summarise_all(min)
+
+```
+
+## 3. Get the estimated $m_x$ from the best RotatedLC for each country.
+
+Sourcing the necessary functions.
+
+```{r}
+source("RotatedLC_MortRateExportFunctions.R")
+```
+
+Get the estimated $m_x$ for the training set and forecasted years for one country and one gender.
+
+```{r}
+country <- "USA"
+
+DataOutput <- CleanUp_HMD(country, 1950, 1990, 1999)
+
+
+
+est_mx_female <- EstimateTrainingRotatedLC(DataOutput$mx_male_train, DataOutput$mx_female_train, 1, DataOutput$e0data$Total,
+                                         p=HMD_Best_withRotatedLC_Female$p[HMD_Best_withRotatedLC_Female$Country=="ISL"],
+                                         rotation_start_e0 = HMD_Best_withRotatedLC_Female$e0l[HMD_Best_withRotatedLC_Female$Country=="ISL"],
+                                         Gender = "female")
+
+colnames(est_mx_female) <- min(as.numeric(colnames(DataOutput$mx_female_train))):1990
+
+temp <- ForecastRotatedLC(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                e0_female_proj = NULL, e0_male_proj = NULL,
+                                HMD_Best_withRotatedLC_Female$p[HMD_Best_withRotatedLC_Female$Country=="ISL"],
+                                HMD_Best_withRotatedLC_Female$e0l[HMD_Best_withRotatedLC_Female$Country=="ISL"],
+                                2035-1990, IsLog = FALSE)$est_mx_female
+
+colnames(temp) <- 1991:2035
+
+est_mx_female <-cbind(est_mx_female, temp)
+
+```
+
+Get the estimated $m_x$ for the training set and forecasted years for each country in a loop.
+
+```{r}
+CountryList <- unique(HMD_Best_withRotatedLC_Female$Country)
+
+ResultListMale <- vector(mode = "list", length = length(CountryList))
+names(ResultListMale) <- CountryList
+
+ResultListFemale <- vector(mode = "list", length = length(CountryList))
+names(ResultListFemale) <- CountryList
+
+for (index in 1:length(CountryList)) {
+  DataOutput <- CleanUp_HMD(CountryList[index], 1950, 1990, 1999)
+  
+  print(CountryList[index])
+  
+  # Male
+  
+  tryCatch(
+    expr = {
+      est_mx_male <- EstimateTrainingRotatedLC(DataOutput$mx_male_train, DataOutput$mx_female_train, 1, DataOutput$e0data$Total,
+                                         p=HMD_Best_withRotatedLC_Male$p[HMD_Best_withRotatedLC_Male$Country==CountryList[index]],
+                                         rotation_start_e0 = HMD_Best_withRotatedLC_Male$e0l[HMD_Best_withRotatedLC_Male$Country==CountryList[index]],
+                                         Gender = "male")
+      colnames(est_mx_male) <- min(as.numeric(colnames(DataOutput$mx_male_train))):1990
+      
+      temp <- ForecastRotatedLC(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                e0_female_proj = NULL, e0_male_proj = NULL,
+                                HMD_Best_withRotatedLC_Male$p[HMD_Best_withRotatedLC_Male$Country==CountryList[index]],
+                                HMD_Best_withRotatedLC_Male$e0l[HMD_Best_withRotatedLC_Male$Country==CountryList[index]],
+                                2035-1990, IsLog = FALSE)$est_mx_male
+      colnames(temp) <- 1991:2035
+      est_mx_male <-cbind(est_mx_male, temp)
+      
+      ResultListMale[[index]] <- est_mx_male
+    },
+    error = function(error_condition){ 
+        ResultListMale[[index]] <- error_condition
+    })
+    
+    # Female
+  
+  tryCatch(
+    expr = {
+      est_mx_female <- EstimateTrainingRotatedLC(DataOutput$mx_male_train, DataOutput$mx_female_train, 1, DataOutput$e0data$Total,
+                                         p=HMD_Best_withRotatedLC_Female$p[HMD_Best_withRotatedLC_Female$Country==CountryList[index]],
+                                         rotation_start_e0 = HMD_Best_withRotatedLC_Female$e0l[HMD_Best_withRotatedLC_Female$Country==CountryList[index]],
+                                         Gender = "female")
+      colnames(est_mx_female) <- min(as.numeric(colnames(DataOutput$mx_female_train))):1990
+      temp <- ForecastRotatedLC(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                e0_female_proj = NULL, e0_male_proj = NULL,
+                                HMD_Best_withRotatedLC_Female$p[HMD_Best_withRotatedLC_Female$Country==CountryList[index]],
+                                HMD_Best_withRotatedLC_Female$e0l[HMD_Best_withRotatedLC_Female$Country==CountryList[index]],
+                                2035-1990, IsLog = FALSE)$est_mx_female
+      colnames(temp) <- 1991:2035
+      est_mx_female <-cbind(est_mx_female, temp)
+      
+      ResultListFemale[[index]] <- est_mx_female
+    },
+    error = function(error_condition){ 
+        ResultListFemale[[index]] <- error_condition
+    })
+  
+}
+```
+
+Save results to *Rda*:
+
+```{r}
+save(ResultListMale,file="RotatedLC_Male_mx.Rda")
+
+save(ResultListFemale,file="RotatedLC_Female_mx.Rda")
+```
+
+Save results to *xlsx*:
+
+```{r}
+library(xlsx)
+
+# Male
+wb <- createWorkbook()
+sheetnames <- names(ResultListMale)
+sheets <- lapply(sheetnames, createSheet, wb = wb)
+void <- Map(addDataFrame, ResultListMale, sheets)
+saveWorkbook(wb, file = "RotatedLC_Male_mx.xlsx")
+
+wb <- NULL
+gc()
+
+# Female
+wb <- createWorkbook()
+sheetnames <- names(ResultListFemale)
+sheets <- lapply(sheetnames, createSheet, wb = wb)
+void <- Map(addDataFrame, ResultListFemale, sheets)
+saveWorkbook(wb, file = "RotatedLC_Female_mx.xlsx")
+```
+
+## 4. Get the estimated $m_x$ from the best LC with GAM for each country
+
+Load the detailed *LC with GAM* results:
+
+```{r}
+HMD_LCwithGAM_Full <- read_csv("HMD_LCwithGAM_Full_LogMSE.csv")
+HMD_LCwithGAM_Full <- as.data.frame(HMD_LCwithGAM_Full)
+str(HMD_LCwithGAM_Full)
+```
+
+Adjust column names to be compatible with HMD_BestResults:
+
+```{r}
+colnames(HMD_LCwithGAM_Full)[5:6] <- colnames(HMD_BestResults[4:5])
+str(HMD_LCwithGAM_Full)
+```
+
+Let's get the $e0l$ and $p$ parameters based on the test $MSE$ in the `HMD_BestResults` dataframe:
+
+```{r}
+# Males
+HMD_Best_LCwithGAM_Male <- HMD_BestResults[,c("Country", "mse_male_test_LCwithGAM")]
+HMD_Best_LCwithGAM_Male <- merge(HMD_Best_LCwithGAM_Male,
+                                     HMD_LCwithGAM_Full[,c("Country",
+                                                           "mse_male_test_LCwithGAM",
+                                                           "basis_form",
+                                                           "k_base")],
+                                     by=c("Country", "mse_male_test_LCwithGAM"))
+
+#----------------------------------------------------------------------------------------------------
+
+# Females
+HMD_Best_LCwithGAM_Female <- HMD_BestResults[,c("Country", "mse_female_test_LCwithGAM")]
+HMD_Best_LCwithGAM_Female <- merge(HMD_Best_LCwithGAM_Female,
+                                     HMD_LCwithGAM_Full[,c("Country",
+                                                           "mse_female_test_LCwithGAM",
+                                                           "basis_form",
+                                                           "k_base")],
+                                     by=c("Country", "mse_female_test_LCwithGAM"))
+
+# Getting the simpler model in case of multiple optima
+
+HMD_Best_LCwithGAM_Female <- HMD_Best_LCwithGAM_Female[-c(7,26),]
+
+```
+
+Sourcing the necessary functions.
+
+```{r}
+source("RotatedLC_MortRateExportFunctions.R")
+```
+
+Get the estimated $m_x$ for the training set and forecasted years for one country and one gender.
+
+```{r}
+country <- "UKR"
+
+DataOutput <- CleanUp_HMD(country, 1950, 1990, 1999)
+
+
+
+est_mx_female <- exp(EstimateTrainingwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                 k_base = HMD_Best_LCwithGAM_Female$k_base[HMD_Best_LCwithGAM_Female$Country==country],
+                                 basis_form = HMD_Best_LCwithGAM_Female$basis_form[HMD_Best_LCwithGAM_Female$Country==country],
+                                 IsLog = TRUE)$est_mx_female)
+
+colnames(est_mx_female) <- min(as.numeric(colnames(DataOutput$mx_female_train))):1990
+
+temp <- exp(ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                 k_base = HMD_Best_LCwithGAM_Female$k_base[HMD_Best_LCwithGAM_Female$Country==country],
+                                 basis_form = HMD_Best_LCwithGAM_Female$basis_form[HMD_Best_LCwithGAM_Female$Country==country],
+                                 ForecastPeriods = 2035-1990,
+                                 IsLog = TRUE)$est_mx_female)
+
+colnames(temp) <- 1991:2035
+
+est_mx_female <-cbind(est_mx_female, temp)
+
+
+est_mx_male <- exp(EstimateTrainingwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_male_train, nx=1,
+                                 k_base = HMD_Best_LCwithGAM_Male$k_base[HMD_Best_LCwithGAM_Male$Country==country],
+                                 basis_form = HMD_Best_LCwithGAM_Male$basis_form[HMD_Best_LCwithGAM_Male$Country==country],
+                                 IsLog = TRUE)$est_mx_male)
+
+colnames(est_mx_male) <- min(as.numeric(colnames(DataOutput$mx_male_train))):1990
+
+temp <- exp(ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_male_train, nx=1,
+                                 k_base = HMD_Best_LCwithGAM_Male$k_base[HMD_Best_LCwithGAM_Male$Country==country],
+                                 basis_form = HMD_Best_LCwithGAM_Male$basis_form[HMD_Best_LCwithGAM_Male$Country==country],
+                                 ForecastPeriods = 2035-1990,
+                                 IsLog = TRUE)$est_mx_male)
+
+colnames(temp) <- 1991:2035
+
+est_mx_male <-cbind(est_mx_male, temp)
+
+
+
+```
+
+Get the estimated $m_x$ for the training set and forecasted years for each country in a loop.
+
+```{r}
+CountryList <- unique(HMD_Best_LCwithGAM_Female$Country)
+
+ResultListMale <- vector(mode = "list", length = length(CountryList))
+names(ResultListMale) <- CountryList
+
+ResultListFemale <- vector(mode = "list", length = length(CountryList))
+names(ResultListFemale) <- CountryList
+
+for (index in 1:length(CountryList)) {
+  DataOutput <- CleanUp_HMD(CountryList[index], 1950, 1990, 1999)
+  
+  print(CountryList[index])
+  
+  # Male
+  
+  tryCatch(
+    expr = {
+      est_mx_male <- exp(EstimateTrainingwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_male_train, nx=1,
+                                 k_base = HMD_Best_LCwithGAM_Male$k_base[HMD_Best_LCwithGAM_Male$Country==CountryList[index]],
+                                 basis_form = HMD_Best_LCwithGAM_Male$basis_form[HMD_Best_LCwithGAM_Male$Country==CountryList[index]],
+                                 IsLog = TRUE)$est_mx_male)
+      
+      colnames(est_mx_male) <- min(as.numeric(colnames(DataOutput$mx_male_train))):1990
+      
+      temp <- exp(ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_male_train, nx=1,
+                                 k_base = HMD_Best_LCwithGAM_Male$k_base[HMD_Best_LCwithGAM_Male$Country==CountryList[index]],
+                                 basis_form = HMD_Best_LCwithGAM_Male$basis_form[HMD_Best_LCwithGAM_Male$Country==CountryList[index]],
+                                 ForecastPeriods = 2035-1990,
+                                 IsLog = TRUE)$est_mx_male)
+      
+      colnames(temp) <- 1991:2035
+      
+      est_mx_male <-cbind(est_mx_male, temp)
+      
+      ResultListMale[[index]] <- est_mx_male
+    },
+    error = function(error_condition){ 
+        ResultListMale[[index]] <- error_condition
+    })
+    
+    # Female
+  
+  tryCatch(
+    expr = {
+      est_mx_female <- exp(EstimateTrainingwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                 k_base = HMD_Best_LCwithGAM_Female$k_base[HMD_Best_LCwithGAM_Female$Country==CountryList[index]],
+                                 basis_form = HMD_Best_LCwithGAM_Female$basis_form[HMD_Best_LCwithGAM_Female$Country==CountryList[index]],
+                                 IsLog = TRUE)$est_mx_female)
+      colnames(est_mx_female) <- min(as.numeric(colnames(DataOutput$mx_female_train))):1990
+      
+      temp <- exp(ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
+                                 k_base = HMD_Best_LCwithGAM_Female$k_base[HMD_Best_LCwithGAM_Female$Country==CountryList[index]],
+                                 basis_form = HMD_Best_LCwithGAM_Female$basis_form[HMD_Best_LCwithGAM_Female$Country==CountryList[index]],
+                                 ForecastPeriods = 2035-1990,
+                                 IsLog = TRUE)$est_mx_female)
+      colnames(temp) <- 1991:2035
+      
+      est_mx_female <-cbind(est_mx_female, temp)
+      
+      ResultListFemale[[index]] <- est_mx_female
+    },
+    error = function(error_condition){ 
+        ResultListFemale[[index]] <- error_condition
+    })
+  
+}
+```
+
+Save results to *Rda*:
+
+```{r}
+save(ResultListMale,file="LCwithGAM_Male_mx.Rda")
+
+save(ResultListFemale,file="LCwithGAM_Female_mx.Rda")
+```
+
+Save results to *xlsx*:
+
+```{r}
+library(xlsx)
+
+# Male
+wb <- createWorkbook()
+sheetnames <- names(ResultListMale)
+sheets <- lapply(sheetnames, createSheet, wb = wb)
+void <- Map(addDataFrame, ResultListMale, sheets)
+saveWorkbook(wb, file = "LCwithGAM_Male_mx.xlsx")
+
+wb <- NULL
+gc()
+
+# Female
+wb <- createWorkbook()
+sheetnames <- names(ResultListFemale)
+sheets <- lapply(sheetnames, createSheet, wb = wb)
+void <- Map(addDataFrame, ResultListFemale, sheets)
+saveWorkbook(wb, file = "LCwithGAM_Female_mx.xlsx")
+```
