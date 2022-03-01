@@ -283,7 +283,7 @@ source("RotatedLC_MortRateExportFunctions.R")
 Get the estimated $m_x$ for the training set and forecasted years for one country and one gender.
 
 ```{r}
-country <- "UKR"
+country <- "HUN"
 
 DataOutput <- CleanUp_HMD(country, 1950, 1990, 1999)
 
@@ -307,14 +307,14 @@ colnames(temp) <- 1991:2035
 est_mx_female <-cbind(est_mx_female, temp)
 
 
-est_mx_male <- exp(EstimateTrainingwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_male_train, nx=1,
+est_mx_male <- exp(EstimateTrainingwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
                                  k_base = HMD_Best_LCwithGAM_Male$k_base[HMD_Best_LCwithGAM_Male$Country==country],
                                  basis_form = HMD_Best_LCwithGAM_Male$basis_form[HMD_Best_LCwithGAM_Male$Country==country],
                                  IsLog = TRUE)$est_mx_male)
 
 colnames(est_mx_male) <- min(as.numeric(colnames(DataOutput$mx_male_train))):1990
 
-temp <- exp(ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_male_train, nx=1,
+temp <- exp(ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
                                  k_base = HMD_Best_LCwithGAM_Male$k_base[HMD_Best_LCwithGAM_Male$Country==country],
                                  basis_form = HMD_Best_LCwithGAM_Male$basis_form[HMD_Best_LCwithGAM_Male$Country==country],
                                  ForecastPeriods = 2035-1990,
@@ -348,14 +348,14 @@ for (index in 1:length(CountryList)) {
   
   tryCatch(
     expr = {
-      est_mx_male <- exp(EstimateTrainingwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_male_train, nx=1,
+      est_mx_male <- exp(EstimateTrainingwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
                                  k_base = HMD_Best_LCwithGAM_Male$k_base[HMD_Best_LCwithGAM_Male$Country==CountryList[index]],
                                  basis_form = HMD_Best_LCwithGAM_Male$basis_form[HMD_Best_LCwithGAM_Male$Country==CountryList[index]],
                                  IsLog = TRUE)$est_mx_male)
       
       colnames(est_mx_male) <- min(as.numeric(colnames(DataOutput$mx_male_train))):1990
       
-      temp <- exp(ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_male_train, nx=1,
+      temp <- exp(ForecastLCwithGAM(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
                                  k_base = HMD_Best_LCwithGAM_Male$k_base[HMD_Best_LCwithGAM_Male$Country==CountryList[index]],
                                  basis_form = HMD_Best_LCwithGAM_Male$basis_form[HMD_Best_LCwithGAM_Male$Country==CountryList[index]],
                                  ForecastPeriods = 2035-1990,
