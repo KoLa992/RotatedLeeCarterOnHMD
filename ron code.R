@@ -11,6 +11,8 @@ require(gnm)
 require(stringr)
 require(ggpubr)
 
+Sys.setenv("CUDA_VISIBLE_DEVICES" = -1)
+
 obs.year = 1999
 last.year = 2019
 
@@ -212,14 +214,14 @@ lr_call = callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 10, ver
                                         factor = 0.9, min_lr = 0.0001)
 mod_save = callback_model_checkpoint(filepath = paste0("c:/r/", mod, i, ".h5"), verbose = T, save_best_only = T)
 
-fit <- model %>% fit(x = train_list,
-                     y= list(output = as.matrix(train$mx_scale)),
-                     epochs=50,
-                     batch_size=128,
-                     verbose=2,
-                     validation_split = 0.01,
-                     shuffle=T,
-                     callbacks = list(lr_call, mod_save))
+# fit <- model %>% fit(x = train_list,
+#                      y= list(output = as.matrix(train$mx_scale)),
+#                      epochs=50,
+#                      batch_size=128,
+#                      verbose=2,
+#                      validation_split = 0.01,
+#                      shuffle=T,
+#                      callbacks = list(lr_call, mod_save))
 
 model_weights = load_model_hdf5(paste0("c:/r/", mod, i, ".h5"))
 
@@ -359,14 +361,14 @@ model %>% compile(
 lr_call = callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 10, verbose = 1, cooldown = 5, factor = 0.9, min_lr = 0.0001)
 mod_save = callback_model_checkpoint(filepath = paste0("c:/r/bx_curvature_boost_", i, ".h5"), verbose = T, save_best_only = T)
 
-fit <- model %>% fit(x = train_list,
-                     y= list(output = as.matrix(train$mx_scale)),
-                     epochs=25,
-                     batch_size=128,
-                     verbose=2,
-                     validation_split = 0.05,
-                     shuffle=T,
-                     callbacks = list(lr_call, mod_save))
+# fit <- model %>% fit(x = train_list,
+#                      y= list(output = as.matrix(train$mx_scale)),
+#                      epochs=25,
+#                      batch_size=128,
+#                      verbose=2,
+#                      validation_split = 0.05,
+#                      shuffle=T,
+#                      callbacks = list(lr_call, mod_save))
 
 model = load_model_hdf5(paste0("c:/r/bx_curvature_boost_", i, ".h5"))
 
@@ -503,15 +505,96 @@ results %>% melt.data.table(measure.vars = c("MSE_pred", "MSE_pred_boost")) %>%
 
 ggsave("c:/r/RotatedLeeCarterOnHMD/boosted_vs_base.pdf")
 ################################
+#### read in Laci's forecasts
+
+path = "C:/R/RotatedLeeCarterOnHMD/ExportMortalityRates/"
+files = list("LCwithGAM_Female_mx.Rda", "LCwithGAM_Male_mx.Rda", "RotatedLC_Female_mx.Rda", "RotatedLC_Male_mx.Rda")
+file_path = paste0(path, files)
+
+for (i in 1:2) load(file_path[i])
+LCwithGAM_Male_mx = ResultListMale %>% melt %>% data.table()
+LCwithGAM_Female_mx = ResultListFemale%>% melt %>% data.table()
+LCwithGAM_Male_mx[, Var1 := Var1 - 1]
+LCwithGAM_Female_mx[, Var1 := Var1 - 1]
+
+for (i in 3:4) load(file_path[i])
+RotatedLC_Male_mx = ResultListMale%>% melt %>% data.table()
+RotatedLC_Female_mx = ResultListFemale%>% melt %>% data.table()
+
+LCwithGAM_Male_mx[, type := "LCwithGAM"]
+LCwithGAM_Male_mx[, sex := "Male"]
+LCwithGAM_Female_mx[, type := "LCwithGAM"]
+LCwithGAM_Female_mx[, sex := "Female"]
+RotatedLC_Male_mx[, type := "RotatedLC"]
+RotatedLC_Male_mx[, sex := "Male"]
+RotatedLC_Female_mx[, type := "RotatedLC"]
+RotatedLC_Female_mx[, sex := "Female"]
+
+all_res = rbind(LCwithGAM_Male_mx, LCwithGAM_Female_mx, RotatedLC_Male_mx, RotatedLC_Female_mx)
+all_res %>% setnames(names(all_res), c("Age", "Year", "mx", "Country", "Type", "Sex"))
+all_res = all_res %>% dcast.data.table(Age + Year + Country + Sex ~ Type, value.var = "mx", fun.aggregate = sum)
+all_res[Country == "AUS" & Year == 2018 & Age ==0]
+
+nagging_summ = nagging[, c("Country", "Sex", "Year", "Age", "mx", "preds", "preds_boost", "pred_LC_svd")] %>% setkey(Country, Sex, Year, Age)
+all_res %>% setkey(Country, Sex, Year, Age)
+nagging_summ = nagging_summ %>% merge(all_res)
+
+nagging_summ = nagging_summ %>% melt.data.table(id.vars = c("Country", "Sex", "Year", "Age", "mx"))
+nagging_summ[Year >= 2000][, .(mean((mx - value)^2)), keyby = .(Sex, variable)]
+
+nagging_summ[Year >= 2000][, .(mean((mx - value)^2)), keyby = .(Country, Year, variable)] %>% 
+  ggplot(aes(x = Year, y = log(V1)))+geom_point(aes(colour = variable))+facet_wrap(~Country)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+nagging_summ_method = nagging_summ[Year >= 2000][Sex == "Female", .(mean((mx - value)^2)), keyby = .(Country, Year, variable)]
+nagging_summ_method[, min_V1 := min(V1), keyby = .(Country, Year)]
+nagging_summ_method[V1 == min_V1] %>% 
+  ggplot(aes(x = Year,y = log(min_V1), label = variable))+geom_text(aes(colour = variable), angle = 90)+facet_wrap(~Country)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+nagging_summ[Year >= 2000][Sex == "Male", .(mean((mx - value)^2)), keyby = .(Country, Year, variable)] %>% 
+  ggplot(aes(x = Year,y = log(V1)))+geom_line(aes(colour = variable, group = variable))+facet_wrap(~Country)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+nagging_summ_method = nagging_summ[Year >= 2000][, .(mean((mx - value)^2)), keyby = .(Country, Age, variable)]
+nagging_summ_method[, min_V1 := min(V1), keyby = .(Country, Age)]
+nagging_summ_method[V1 == min_V1] %>% 
+  ggplot(aes(x = Age,y = log(min_V1)))+geom_point(aes(colour = variable), angle = 90)+facet_wrap(~Country)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 
 
 
+nagging_summ[Year >= 2000][, .(mean((mx - value)^2)), keyby = .(Sex, Age, variable)] %>% 
+  ggplot(aes(x = Age, y = log(V1)))+geom_point(aes(colour = variable, shape = Sex))+facet_wrap(~Sex)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+nagging_summ[Year == 2000 & Country == "AUS"] %>% 
+  ggplot(aes(x = Age, y = log(value)))+geom_point(aes(colour = variable, shape = Sex))+facet_wrap(~Sex)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+geom_line(aes(x = Age, y = log(mx)), 
+                                                                                data = nagging_summ[Year == 2000 & Country == "AUS"])
+
+###### annuity
+
+all_res = all_res %>% melt.data.table(measure.vars = c("LCwithGAM", "RotatedLC"))
+all_res[, qx := 1-exp(-value)]
+all_res[, px := 1- qx]
+all_res[, lag_px := c(lag(px)), keyby = .(Year, Country, Sex, variable)]
+all_res[, tpx := c(lag(px)), keyby = .(Year, Country, Sex, variable)]
+all_res[, tpx := ifelse(is.na(tpx), 1, tpx)]
+
+all_res[, cohort := Year - Age]
+cohort = all_res[cohort == 1935 & Age >= 65]
+cohort[, start_px := first(lag_px), keyby = .(Country, Sex, variable)]
+cohort[, tpx := tpx/start_px]
+cohort[, V := 1.04^-(Year-2000)]
+cohort[, sum(V * tpx), keyby = .(Country, Sex, variable)] %>% 
+  dcast.data.table(Country + Sex ~variable, value.var = "V1") %>% 
+  .[, RotatedLC/ LCwithGAM, keyby = .(Country, Sex)] %>% .[order(V1)]
 
 
-
-
-
+####################
 
 train[Country == "USA" & Sex == "Female"][Year %in% c(1950, 1960, 1970, 1980, 1999)] %>% 
   melt.data.table(measure.vars = c("bx_pred_fin", "kt_pred_fin", "bx_boost_pred_fin" ,"kt_boost_pred_fin") ) %>% 
