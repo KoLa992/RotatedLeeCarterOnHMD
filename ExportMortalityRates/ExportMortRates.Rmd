@@ -5,12 +5,6 @@ output:
     toc: true
     toc_float: true
     df_print: paged
-  html_notebook: 
-    highlight: tango
-    theme: spacelab
-    toc: yes
-    toc_float: yes
-    toc_depth: 5
 ---
 
 ```{r setup, include=FALSE}
@@ -108,7 +102,7 @@ Get the estimated $m_x$ for the training set and forecasted years for one countr
 ```{r}
 country <- "USA"
 
-DataOutput <- CleanUp_HMD(country, 1950, 1990, 1999)
+DataOutput <- CleanUp_HMD(country, 1950, 1999, 2011)
 
 
 
@@ -117,15 +111,15 @@ est_mx_female <- EstimateTrainingRotatedLC(DataOutput$mx_male_train, DataOutput$
                                          rotation_start_e0 = HMD_Best_withRotatedLC_Female$e0l[HMD_Best_withRotatedLC_Female$Country=="ISL"],
                                          Gender = "female")
 
-colnames(est_mx_female) <- min(as.numeric(colnames(DataOutput$mx_female_train))):1990
+colnames(est_mx_female) <- min(as.numeric(colnames(DataOutput$mx_female_train))):1999
 
 temp <- ForecastRotatedLC(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
                                 e0_female_proj = NULL, e0_male_proj = NULL,
                                 HMD_Best_withRotatedLC_Female$p[HMD_Best_withRotatedLC_Female$Country=="ISL"],
                                 HMD_Best_withRotatedLC_Female$e0l[HMD_Best_withRotatedLC_Female$Country=="ISL"],
-                                2035-1990, IsLog = FALSE)$est_mx_female
+                                2035-1999, IsLog = FALSE)$est_mx_female
 
-colnames(temp) <- 1991:2035
+colnames(temp) <- 2000:2035
 
 est_mx_female <-cbind(est_mx_female, temp)
 
@@ -143,7 +137,7 @@ ResultListFemale <- vector(mode = "list", length = length(CountryList))
 names(ResultListFemale) <- CountryList
 
 for (index in 1:length(CountryList)) {
-  DataOutput <- CleanUp_HMD(CountryList[index], 1950, 1990, 1999)
+  DataOutput <- CleanUp_HMD(CountryList[index], 1950, 1999, 2011)
   
   print(CountryList[index])
   
@@ -155,14 +149,14 @@ for (index in 1:length(CountryList)) {
                                          p=HMD_Best_withRotatedLC_Male$p[HMD_Best_withRotatedLC_Male$Country==CountryList[index]],
                                          rotation_start_e0 = HMD_Best_withRotatedLC_Male$e0l[HMD_Best_withRotatedLC_Male$Country==CountryList[index]],
                                          Gender = "male")
-      colnames(est_mx_male) <- min(as.numeric(colnames(DataOutput$mx_male_train))):1990
+      colnames(est_mx_male) <- min(as.numeric(colnames(DataOutput$mx_male_train))):1999
       
       temp <- ForecastRotatedLC(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
                                 e0_female_proj = NULL, e0_male_proj = NULL,
                                 HMD_Best_withRotatedLC_Male$p[HMD_Best_withRotatedLC_Male$Country==CountryList[index]],
                                 HMD_Best_withRotatedLC_Male$e0l[HMD_Best_withRotatedLC_Male$Country==CountryList[index]],
-                                2035-1990, IsLog = FALSE)$est_mx_male
-      colnames(temp) <- 1991:2035
+                                2035-1999, IsLog = FALSE)$est_mx_male
+      colnames(temp) <- 2000:2035
       est_mx_male <-cbind(est_mx_male, temp)
       
       ResultListMale[[index]] <- est_mx_male
@@ -179,13 +173,13 @@ for (index in 1:length(CountryList)) {
                                          p=HMD_Best_withRotatedLC_Female$p[HMD_Best_withRotatedLC_Female$Country==CountryList[index]],
                                          rotation_start_e0 = HMD_Best_withRotatedLC_Female$e0l[HMD_Best_withRotatedLC_Female$Country==CountryList[index]],
                                          Gender = "female")
-      colnames(est_mx_female) <- min(as.numeric(colnames(DataOutput$mx_female_train))):1990
+      colnames(est_mx_female) <- min(as.numeric(colnames(DataOutput$mx_female_train))):1999
       temp <- ForecastRotatedLC(mx_male = DataOutput$mx_male_train, mx_female = DataOutput$mx_female_train, nx=1,
                                 e0_female_proj = NULL, e0_male_proj = NULL,
                                 HMD_Best_withRotatedLC_Female$p[HMD_Best_withRotatedLC_Female$Country==CountryList[index]],
                                 HMD_Best_withRotatedLC_Female$e0l[HMD_Best_withRotatedLC_Female$Country==CountryList[index]],
-                                2035-1990, IsLog = FALSE)$est_mx_female
-      colnames(temp) <- 1991:2035
+                                2035-1999, IsLog = FALSE)$est_mx_female
+      colnames(temp) <- 2000:2035
       est_mx_female <-cbind(est_mx_female, temp)
       
       ResultListFemale[[index]] <- est_mx_female
@@ -283,7 +277,7 @@ source("RotatedLC_MortRateExportFunctions.R")
 Get the estimated $m_x$ for the training set and forecasted years for one country and one gender.
 
 ```{r}
-country <- "HUN"
+country <- "CAN"
 
 DataOutput <- CleanUp_HMD(country, 1950, 1990, 1999)
 
