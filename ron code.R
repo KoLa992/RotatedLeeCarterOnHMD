@@ -456,6 +456,12 @@ comp %>% melt.data.table(id.vars = "Country") %>% .[variable %like% "test"] %>%
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ggsave("c:/r/RotatedLeeCarterOnHMD/all_results_compare.pdf")
 
+res_count = comp %>% melt.data.table(id.vars = "Country") %>% .[variable %like% "test"]
+res_count[variable %like% "female", Sex := "Female"]
+res_count[!variable %like% "female", Sex := "Male"]
+res_count[, min := min(value), keyby = .(Country , Sex)]
+res_count[value == min][, .N, keyby = variable]
+
 metrics = all_preds[set == "test",.(
   LC_SVD=sum((mx-pred_LC_svd)^2)/.N,
   DEEP=sum((mx-preds)^2)/.N), keyby = .( Country,Sex)] %>%
