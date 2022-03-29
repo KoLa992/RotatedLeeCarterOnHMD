@@ -20,6 +20,12 @@ set.seed(1234)
 
 #### setup test/train
 all_mort= fread("c:/r/all_mx_feb2020.csv")
+
+all_mort[Country == "USA"][ round(Year/5)*5 == Year ] %>% ggplot(aes(x = Age, y = log(mx))) +
+  geom_line(aes(group = Year, colour = as.factor(Year))) + facet_wrap(~Sex) +
+  ggpubr::theme_pubclean()+ scale_colour_discrete(name = "Year")
+
+
 all_mort[, time := (Year   - min(Year  ))/(max(Year  ) - min(Year  ))]
 
 train=all_mort[Year<(obs.year+1)]
@@ -443,7 +449,7 @@ results = cbind(non_boost, boost[, 2:3])
 results %>% fwrite("c:/r/RotatedLeeCarterOnHMD/NN_results.csv")
 
 ### results_comp
-
+results= fread("c:/r/RotatedLeeCarterOnHMD/NN_results.csv")
 comp = fread("C:/R/RotatedLeeCarterOnHMD/HMD_BestResultsByCountry_Rotated+GAM.csv")
 comp %>% setkey(Country)
 results %>% setkey(Country)
@@ -453,14 +459,14 @@ comp %>%  fwrite("C:/R/RotatedLeeCarterOnHMD/HMD_BestResultsByCountry_Rotated+GA
 
 comp %>% melt.data.table(id.vars = "Country") %>% .[variable %like% "test"] %>% 
   ggplot(aes(x = Country, y = value)) + geom_point(aes(colour = variable))+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme_pubr()+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ggsave("c:/r/RotatedLeeCarterOnHMD/all_results_compare.pdf")
 
 res_count = comp %>% melt.data.table(id.vars = "Country") %>% .[variable %like% "test"]
 res_count[variable %like% "female", Sex := "Female"]
 res_count[!variable %like% "female", Sex := "Male"]
 res_count[, min := min(value), keyby = .(Country , Sex)]
-res_count[value == min][, .N, keyby = variable]
+res_count[value == min][, .N, keyby = variable] %>% fwrite("c:/r/res_count.csv")
 
 metrics = all_preds[set == "test",.(
   LC_SVD=sum((mx-pred_LC_svd)^2)/.N,
