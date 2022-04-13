@@ -5,12 +5,6 @@ output:
     toc: true
     toc_float: true
     df_print: paged
-  html_notebook: 
-    highlight: tango
-    theme: spacelab
-    toc: yes
-    toc_float: yes
-    toc_depth: 5
 ---
 
 ```{r setup, include=FALSE}
@@ -19,50 +13,74 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 
 # 1. Load Data on Model Results for all Country
 
-Loading the *csv* to R enivronment:
-
+Loading the *final_results.csv* to R enivronment:
 
 ```{r}
-library(readr)
-HMD_BestResults <- read_csv("HMD_BestResultsByCountry_Rotated+GAM+NN.csv")
-HMD_BestResults <- as.data.frame(HMD_BestResults)
+HMD_BestResults <- read.csv("final_results.csv")
 str(HMD_BestResults)
 ```
 
-Remove columns of valdiation results:
+Rename the `variable` column to `Model` and the `mse` to `MSE`. Rename *preds* to *NN*, *preds_boost* to *NN_Boost*, *stacked* to *Stacked* and *pred_LC_svd* to *LC_SVD* to have more clear names on the graphs and pivots.
 
 ```{r}
-HMD_BestResults$min_mse_female_validation_RotatedLC <- NULL
-HMD_BestResults$min_mse_male_validation_RotatedLC <- NULL
-HMD_BestResults$min_mse_female_validation_LCwithGAM <- NULL
-HMD_BestResults$min_mse_male_validation_LCwithGAM <- NULL
+colnames(HMD_BestResults)[3] <- "Model"
+colnames(HMD_BestResults)[4] <- "MSE"
+HMD_BestResults$Model[HMD_BestResults$Model == "preds"] <- "NN"
+HMD_BestResults$Model[HMD_BestResults$Model == "preds_boost"] <- "NN_Boost"
+HMD_BestResults$Model[HMD_BestResults$Model == "pred_LC_svd"] <- "LC_SVD"
+HMD_BestResults$Model[HMD_BestResults$Model == "stacked"] <- "Stacked"
 str(HMD_BestResults)
 ```
-
-# 2. Get Best Models and Generate New Variables
 
 Load packages for analysis:
 
 ```{r}
 library(ggplot2)
 library(tidyr)
+library(stringr)
 library(dplyr)
 ```
+
+Define function to shape the `HMD_BestResults` to a *one country - one row* styled table.
+
+```{r}
+myspread <- function(df, key, value) {
+  # quote key
+  keyq <- rlang::enquo(key)
+  # break value vector into quotes
+  valueq <- rlang::enquo(value)
+  s <- rlang::quos(!!valueq)
+  df %>% gather(variable, value, !!!s) %>%
+    unite(temp, !!keyq, variable) %>%
+    spread(temp, value)
+}
+```
+
+Apply the function on `HMD_BestResults` and see the results:
+
+```{r}
+HMD_BestResults <- HMD_BestResults %>% spread(Sex, MSE)
+HMD_BestResults <- HMD_BestResults %>% myspread(Model, c(Female,Male))
+HMD_BestResults <- HMD_BestResults[,c("Country",
+                                      colnames(HMD_BestResults)[str_detect(colnames(HMD_BestResults), "_Male")],
+                                      colnames(HMD_BestResults)[str_detect(colnames(HMD_BestResults), "_Female")])]
+str(HMD_BestResults)
+```
+
+# 2. Get Best Models and Generate New Variables
 
 Get best model for females:
 
 ```{r}
-HMD_BestResults$BestFemaleMSE <- apply(HMD_BestResults[,c(3,5,7,9)], 1, FUN = min)
+HMD_BestResults$BestFemaleMSE <- apply(HMD_BestResults[,8:13], 1, FUN = min)
 
 
 HMD_BestResults$BestFemaleModel <- NA
 for (i in 1:nrow(HMD_BestResults)) {
-  HMD_BestResults$BestFemaleModel[i] <- names(HMD_BestResults[,1:9])[which(
-    HMD_BestResults[,1:9] == HMD_BestResults$BestFemaleMSE[i],
+  HMD_BestResults$BestFemaleModel[i] <- names(HMD_BestResults[,2:13])[which(
+    HMD_BestResults[,2:13] == HMD_BestResults$BestFemaleMSE[i],
     arr.ind=T)[, "col"]]
 }
-
-HMD_BestResults$BestFemaleModel <- stringr::str_remove(HMD_BestResults$BestFemaleModel, "mse_female_test_")
 
 str(HMD_BestResults)
 ```
@@ -70,7 +88,7 @@ str(HMD_BestResults)
 Get best model for males:
 
 ```{r}
-HMD_BestResults$BestMaleMSE <- apply(HMD_BestResults[,c(2,4,6,8)], 1, FUN = min)
+HMD_BestResults$BestMaleMSE <- apply(HMD_BestResults[,2:7], 1, FUN = min)
 
 
 HMD_BestResults$BestMaleModel <- NA
@@ -79,8 +97,6 @@ for (i in 1:nrow(HMD_BestResults)) {
     HMD_BestResults[,1:9] == HMD_BestResults$BestMaleMSE[i],
     arr.ind=T)[, "col"]]
 }
-
-HMD_BestResults$BestMaleModel <- stringr::str_remove(HMD_BestResults$BestMaleModel, "mse_male_test_")
 
 str(HMD_BestResults)
 ```
@@ -92,34 +108,34 @@ table(HMD_BestResults$BestFemaleModel)
 table(HMD_BestResults$BestMaleModel)
 ```
 
-Looks like *NN_boost* really dominates and only the *NN_non_boost* won in more than $3$ countries.
+Looks like *NN_Boost* and *Stacked* are the best option for *females*. And the *LCwithGAM* for *males*.
 
-Let's check the *NN_boost* advantage to the *NN_non_boost* solution in each country for both genders:
+Let's check the *NN_Boost* advantage to the *simple NN* solution in each country for both genders:
 
 ```{r}
-temp_df <- reshape2::melt(HMD_BestResults[,c("Country", "mse_male_test_NN_non_boost", "mse_male_test_NN_boost")],
+temp_df <- reshape2::melt(HMD_BestResults[,c("Country", "NN_Male", "NN_Boost_Male")],
                             id.var = "Country")
 
 ggplot(temp_df, aes(x = Country, y = value, color = variable, group=variable)) +
   geom_line()
 
-temp_df <- reshape2::melt(HMD_BestResults[,c("Country", "mse_female_test_NN_non_boost", "mse_female_test_NN_boost")],
+temp_df <- reshape2::melt(HMD_BestResults[,c("Country", "NN_Female", "NN_Boost_Female")],
                             id.var = "Country")
 
 ggplot(temp_df, aes(x = Country, y = value, color = variable, group=variable)) +
   geom_line()
 ```
 
-It seems that the MSE of *NN_boost* and *NN_non_boost* do not differ ignificantly when the *NN_non_boost* is in the lead.
+It seems that the $MSE$ of *NN_Boost* is always *better or about the same* as the $MSE$ of the *simple NN*.
 
 So, next we generate a variable that measures the *NN_boost* advantage in $MSE$ compared to the best **not NN** model.
 
 ```{r}
-HMD_BestResults$BestMaleMSE_notNN <- apply(HMD_BestResults[,c(2,4)], 1, FUN = min)
-HMD_BestResults$NN_boost_vs_Best_notNN_male <- HMD_BestResults$mse_male_test_NN_boost - HMD_BestResults$BestMaleMSE_notNN
+HMD_BestResults$BestMaleMSE_notNN <- apply(HMD_BestResults[,c(2,3,6,7)], 1, FUN = min)
+HMD_BestResults$NN_boost_vs_Best_notNN_male <- HMD_BestResults$NN_Boost_Male - HMD_BestResults$BestMaleMSE_notNN
 
-HMD_BestResults$BestFemaleMSE_notNN <- apply(HMD_BestResults[,c(3,5)], 1, FUN = min)
-HMD_BestResults$NN_boost_vs_Best_notNN_female <- HMD_BestResults$mse_female_test_NN_boost - HMD_BestResults$BestFemaleMSE_notNN
+HMD_BestResults$BestFemaleMSE_notNN <- apply(HMD_BestResults[,c(8,9,12,13)], 1, FUN = min)
+HMD_BestResults$NN_boost_vs_Best_notNN_female <- HMD_BestResults$NN_Boost_Female - HMD_BestResults$BestFemaleMSE_notNN
 
 str(HMD_BestResults)
 ```
@@ -130,7 +146,7 @@ See the best models in each country on the world map!
 
 First, download the shapefile:
 
-```{r}
+```{r eval=FALSE}
 # Download the shapefile.
 download.file("http://thematicmapping.org/downloads/TM_WORLD_BORDERS_SIMPL-0.3.zip" , destfile="GeoData/world_shape_file.zip")
 
@@ -188,7 +204,7 @@ Draw the map of the best models for **female**s!
 library(leaflet)
 
 # Create a color palette for the map
-mypalette <- colorFactor(c("green", "blue", "grey", "orange"),
+mypalette <- colorFactor(c("green", "blue", "orange", "grey", "red", "yellow"),
                          world_spdf@data$BestFemaleModel)
 
 # Prepare the text for tooltips
@@ -228,7 +244,7 @@ Draw the map of the best models for **male**s!
 library(leaflet)
 
 # Create a color palette for the map
-mypalette <- colorFactor(c("green", "blue", "grey"),
+mypalette <- colorFactor(c("green", "blue", "orange", "grey", "red", "yellow"),
                          world_spdf@data$BestMaleModel)
 
 # Prepare the text for tooltips
@@ -267,9 +283,12 @@ Draw the map of *NN_boost* advantage in $MSE$ compared to the *best not NN* mode
 ```{r}
 library(leaflet)
 
+# Set the differences on a logaritmic scale
+world_spdf@data$Log_NN_boost_vs_Best_notNN_female <- log(world_spdf@data$NN_boost_vs_Best_notNN_female - (min(world_spdf@data$NN_boost_vs_Best_notNN_female, na.rm = TRUE)-0.09))
+
 # Create a color palette for the map
 mypalette <- colorNumeric(palette = "RdYlGn",
-                          domain = world_spdf@data$NN_boost_vs_Best_notNN_female,
+                          domain = world_spdf@data$Log_NN_boost_vs_Best_notNN_female,
                           na.color="transparent",
                           reverse = TRUE)
 
@@ -277,7 +296,7 @@ mypalette <- colorNumeric(palette = "RdYlGn",
 mytext <- paste(
     "Country: ", world_spdf@data$NAME,"<br/>", 
     "Best Model Female: ", world_spdf@data$BestMaleFemodel, "<br/>", 
-    "NN_boost_vs_Best_notNN_female: ", round(world_spdf@data$NN_boost_vs_Best_notNN_female, 3), 
+    "Log_NN_boost_vs_Best_notNN_female: ", round(world_spdf@data$Log_NN_boost_vs_Best_notNN_female, 3), 
     sep="") %>%
   lapply(htmltools::HTML)
 
@@ -286,7 +305,7 @@ m <- leaflet(world_spdf) %>%
   addTiles()  %>% 
   setView( lat=10, lng=0 , zoom=2) %>%
   addPolygons( 
-    fillColor = ~mypalette(NN_boost_vs_Best_notNN_female), 
+    fillColor = ~mypalette(Log_NN_boost_vs_Best_notNN_female), 
     stroke=TRUE,
     fillOpacity = 0.9, 
     color="white", 
@@ -298,7 +317,7 @@ m <- leaflet(world_spdf) %>%
       direction = "auto"
     )
   ) %>%
-  addLegend(pal=mypalette, values=~NN_boost_vs_Best_notNN_female, opacity=0.9, title = "NN_boost advantage in MSE - Female", position = "bottomleft")
+  addLegend(pal=mypalette, values=~Log_NN_boost_vs_Best_notNN_female, opacity=0.9, title = "Log_NN_boost advantage in MSE - Female", position = "bottomleft")
 
 # Show map object
 m
@@ -312,17 +331,20 @@ Draw the map of *NN_boost* advantage in $MSE$ compared to the *best not NN* mode
 ```{r}
 library(leaflet)
 
+# Set the differences on a logaritmic scale
+world_spdf@data$Log_NN_boost_vs_Best_notNN_male <- log(world_spdf@data$NN_boost_vs_Best_notNN_male - (min(world_spdf@data$NN_boost_vs_Best_notNN_male, na.rm = TRUE)-0.09))
+
 # Create a color palette for the map
 mypalette <- colorNumeric(palette = "RdYlGn",
-                          domain = world_spdf@data$NN_boost_vs_Best_notNN_male,
+                          domain = world_spdf@data$Log_NN_boost_vs_Best_notNN_male,
                           na.color="transparent",
                           reverse = TRUE)
 
 # Prepare the text for tooltips
 mytext <- paste(
     "Country: ", world_spdf@data$NAME,"<br/>", 
-    "Best Model Male: ", world_spdf@data$BestMaleModel, "<br/>", 
-    "NN_boost_vs_Best_notNN_male: ", round(world_spdf@data$NN_boost_vs_Best_notNN_male, 3), 
+    "Best Model male: ", world_spdf@data$BestMaleFemodel, "<br/>", 
+    "Log_NN_boost_vs_Best_notNN_male: ", round(world_spdf@data$Log_NN_boost_vs_Best_notNN_male, 3), 
     sep="") %>%
   lapply(htmltools::HTML)
 
@@ -331,7 +353,7 @@ m <- leaflet(world_spdf) %>%
   addTiles()  %>% 
   setView( lat=10, lng=0 , zoom=2) %>%
   addPolygons( 
-    fillColor = ~mypalette(NN_boost_vs_Best_notNN_male), 
+    fillColor = ~mypalette(Log_NN_boost_vs_Best_notNN_male), 
     stroke=TRUE,
     fillOpacity = 0.9, 
     color="white", 
@@ -343,7 +365,7 @@ m <- leaflet(world_spdf) %>%
       direction = "auto"
     )
   ) %>%
-  addLegend(pal=mypalette, values=~NN_boost_vs_Best_notNN_male, opacity=0.9, title = "NN_boost advantage in MSE - Male", position = "bottomleft")
+  addLegend(pal=mypalette, values=~Log_NN_boost_vs_Best_notNN_male, opacity=0.9, title = "Log_NN_boost advantage in MSE - male", position = "bottomleft")
 
 # Show map object
 m
@@ -352,81 +374,76 @@ m
 htmlwidgets::saveWidget(m, file="NNboostAdvantageMale.html")
 ```
 
-# 4. Examine Correlations between NN_boost Performance and RotatedLC optimal parameters
+# 4. Calculate Moran's I for the NN_Boost Advantage
 
-Get the best *RotatedLC* parameters for each country.
-
-Load the detailed *RotatedLC* results:
+Load packages for the spatial autocorrelation analysis:
 
 ```{r}
-load("HMD_RotatedLC_Full_LogMSE.Rda")
-str(HMD_RotatedLC_Full)
+library(sf)
+library(spdep)
 ```
 
-Adjust column names to be compatible with HMD_BestResults:
+Load the shapefile of world countries with the `sf` package:
 
 ```{r}
-colnames(HMD_RotatedLC_Full)[5:6] <- colnames(HMD_BestResults[2:3])
-str(HMD_RotatedLC_Full)
+s <- st_read( "GeoData/TM_WORLD_BORDERS_SIMPL-0.3.shp")
 ```
 
-Let's get the $e0l$ and $p$ parameters based on the test $MSE$ in the `HMD_BestResults` dataframe:
+Add the *NN_boost_vs_Best_notNN_male* and *NN_boost_vs_Best_notNN_female* variables to the `s` shape data.
 
 ```{r}
-# Males
-HMD_Best_withRotatedLC_Male <- HMD_BestResults[,c("Country", "mse_male_test_RotatedLC",
-                                                  "NN_boost_vs_Best_notNN_male")]
-HMD_Best_withRotatedLC_Male <- merge(HMD_Best_withRotatedLC_Male,
-                                     HMD_RotatedLC_Full[,c("Country",
-                                                           "mse_male_test_RotatedLC",
-                                                           "e0l",
-                                                           "p")],
-                                     by=c("Country", "mse_male_test_RotatedLC"))
-
-# Get the number of optima
-NumberOfOptima <- HMD_Best_withRotatedLC_Male %>% group_by(Country) %>% summarise(NumberOfOptima=dplyr::n())
-
-# Aggregate multiple optima
-HMD_Best_withRotatedLC_Male <- HMD_Best_withRotatedLC_Male %>% group_by(Country) %>% summarise_all(mean)
-
-# Add number of optima to summary
-HMD_Best_withRotatedLC_Male <- merge(HMD_Best_withRotatedLC_Male, NumberOfOptima, by="Country")
-
-#----------------------------------------------------------------------------------------------------
-
-# Females
-HMD_Best_withRotatedLC_Female <- HMD_BestResults[,c("Country", "mse_female_test_RotatedLC",
-                                                  "NN_boost_vs_Best_notNN_female")]
-HMD_Best_withRotatedLC_Female <- merge(HMD_Best_withRotatedLC_Female,
-                                     HMD_RotatedLC_Full[,c("Country",
-                                                           "mse_female_test_RotatedLC",
-                                                           "e0l",
-                                                           "p")],
-                                     by=c("Country", "mse_female_test_RotatedLC"))
-
-# Get the number of optima
-NumberOfOptima <- HMD_Best_withRotatedLC_Female %>% group_by(Country) %>% summarise(NumberOfOptima=dplyr::n())
-
-# Aggregate multiple optima
-HMD_Best_withRotatedLC_Female <- HMD_Best_withRotatedLC_Female %>% group_by(Country) %>% summarise_all(mean)
-
-# Add number of optima to summary
-HMD_Best_withRotatedLC_Female <- merge(HMD_Best_withRotatedLC_Female, NumberOfOptima, by="Country")
-
+ShapeDataTemp <- merge(x=s, y=HMD_ResultsToMap[,c("Country",
+                                                  "NN_boost_vs_Best_notNN_male",
+                                                  "NN_boost_vs_Best_notNN_female")],
+                       by.x="ISO3", by.y="Country", all.x=TRUE)
+s <- ShapeDataTemp
+str(s)
 ```
 
-Check the correlation matrices for both genders between *RotatedLC* optimal parameters and the *NN_boost* advantage in $MSE$:
+Ok, we have the two new variables.
+
+Let's define “neighboring” polygons.
 
 ```{r}
-CorrMatrixMales <- cor(HMD_Best_withRotatedLC_Male[,3:ncol(HMD_Best_withRotatedLC_Male)], method = "spearman")
-CorrMatrixFemales <- cor(HMD_Best_withRotatedLC_Female[,3:ncol(HMD_Best_withRotatedLC_Female)], method = "spearman")
-
-corrplot::corrplot(CorrMatrixMales, method = "number")
-corrplot::corrplot(CorrMatrixFemales, method = "number")
+sf::sf_use_s2(FALSE)
+#s <- na.omit(s)
+nb <- poly2nb(s, queen=TRUE)
 ```
 
-We can see that the only significant correlation is a *negative* one between the *Number of Optima* and *NN_boost MSE performance*. So, the **NN_boost has higher MSE (worse perfomance) if the RotatedLC has fewer optimal parameters**. The tendency is **a bit stronger for females than males**.
+Each neighboring polygon will be assigned equal weight when computing the neighboring NN advantages in $MSE$.
 
-For **females NN_boost tends to perform better if optimal $p$ is high**.<br>
-For **males, NN_boost tends to perform better if optimal $e0l$ is high**.<br>
-However, these two correlations have only minor absolute value, so these tendencies are **not strong**.
+```{r}
+lw <- nb2listw(nb, style="W", zero.policy=TRUE)
+```
+
+Computing the Moran’s $I$ statistic for *Females*.
+
+```{r}
+NN_boost_vs_Best_notNN_female_Lag <- lag.listw(lw, s$NN_boost_vs_Best_notNN_female,
+                                               zero.policy = FALSE, NAOK = TRUE)
+
+plot(NN_boost_vs_Best_notNN_female_Lag ~ s$NN_boost_vs_Best_notNN_female, pch=16, asp=1)
+MoranOLS <- lm(NN_boost_vs_Best_notNN_female_Lag ~ s$NN_boost_vs_Best_notNN_female)
+abline(MoranOLS, col="blue")
+
+summary(MoranOLS)
+```
+
+Ok, we have some moderate spatial autocorrelation ($0.51$) for *females*. The autpcorrelation is significant at $\alpha=0.05$, but not at $\alpha=0.01$ level.
+
+Computing the Moran’s $I$ statistic for *Males*.
+
+```{r}
+NN_boost_vs_Best_notNN_male_Lag <- lag.listw(lw, s$NN_boost_vs_Best_notNN_male,
+                                               zero.policy = FALSE, NAOK = TRUE)
+
+plot(NN_boost_vs_Best_notNN_male_Lag ~ s$NN_boost_vs_Best_notNN_male, pch=16, asp=1)
+MoranOLS <- lm(NN_boost_vs_Best_notNN_male_Lag ~ s$NN_boost_vs_Best_notNN_male)
+abline(MoranOLS, col="blue")
+
+summary(MoranOLS)
+```
+
+Ok, we have some moderate spatial autocorrelation ($0.52$) for *males*. The autpcorrelation is significant at $\alpha=0.05$, but not at $\alpha=0.01$ level.
+
+The level of spatial autocorrelation is similar for males and for females, but for males it is seems that some outlier effects are more responsible.
